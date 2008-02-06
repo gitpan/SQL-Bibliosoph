@@ -8,7 +8,7 @@ package SQL::Bibliosoph; {
 	use SQL::Bibliosoph::CatalogFile;
 
 	use vars qw($VERSION );
-	$VERSION = "1.3";
+	$VERSION = "1.4";
 
 	our $DEBUG = 0;
 
@@ -45,6 +45,9 @@ END
 				:Arg(Name=> 'path', Default=> '.')
 				:Std(path);
 
+	my @benchmark	
+                :Field 
+				:Arg(Name=> 'benchmark');
 
 	my @constants	:Field 
 					:Arg(Name=> 'constants_from')
@@ -67,6 +70,12 @@ END
 
 	sub init_all :Private {
 		my ($self) = @_;
+
+        # Benchmarking enabled?? Trigger debug.
+        if ($benchmark[$$self]) {
+		    $SQL::Bibliosoph::Query::BENCHMARK = 1;
+            $DEBUG = 1;
+        }
 
 		# propagates debug
 		$SQL::Bibliosoph::CatalogFile::DEBUG = $DEBUG;
@@ -168,13 +177,31 @@ END
 					return $queries[$$that]->{$name}->select_many([@_]);
 				};
 
+				# Many, hash
+				my $name_row = 'h_'.$name;
+                # Many
+				*$name_row = sub {
+					my ($that) = shift;
+					dbg_me('manyh ',$name,@_);
+					return $queries[$$that]->{$name}->select_many([@_],{});
+				};
+
 				# Row
-				my $name_row = 'row_'.$name;
+				$name_row = 'row_'.$name;
 
 				*$name_row = sub {
 					my ($that) = shift;
 					dbg_me('row  ',$name,@_);
 					return $queries[$$that]->{$name}->select_row([@_]);
+				};
+
+				# Row hash
+				$name_row = 'rowh_'.$name;
+
+				*$name_row = sub {
+					my ($that) = shift;
+					dbg_me('rowh  ',$name,@_);
+					return $queries[$$that]->{$name}->select_row_hash([@_]);
 				};
 				last SW;
 			};
@@ -196,6 +223,19 @@ END
 						: $queries[$$that]->{$name}->select_many([@_]) 
 						;
 				};
+
+				# Many, hash
+				my $nameh = 'h_'.$name;
+				*$nameh = sub {
+					my ($that) = shift;
+					dbg_me('manyh ',$name,@_);
+
+					return wantarray 
+						? $queries[$$that]->{$name}->select_many2([@_],{})
+						: $queries[$$that]->{$name}->select_many([@_],{}) 
+						;
+				};
+	
 				last SW;
 			};
 
@@ -332,9 +372,14 @@ SQL::Bibliosoph - A SQL Statements Library
 
 	use SQL::Bibliosoph;
 
+
+    # To enable DEBUG, set:
+    # $SQL::Biblosoph::DEBUG=1;
+
 	my $bs = SQL::Biblioshoph->new(
 			dsn		 => $database_handle,
-			catalog => [ qw(users products <billing) ],
+			catalog  => [ qw(users products <billing) ],
+    #       benchmark=> 1, # to enable statement benchmarking and debug
 	);
 
 	# Using dynamic generated functions.  Wrapper funtions 
@@ -365,6 +410,10 @@ SQL::Bibliosoph - A SQL Statements Library
 	
 	my $products_ref = $bs->get_products($country,$price,$start,$limit);
 
+	# The same, but with an array of hashs result (add h_ at the begining)
+
+	my $products_array_of_hash_ref = $bs->h_get_products($country,$price,$start,$limit);
+	
 
 	# Selecting only one row (add row_ at the begining)
 	# Query:
@@ -375,8 +424,13 @@ SQL::Bibliosoph - A SQL Statements Library
 	my $product_ref = $bs->row_get_one($product_id);
 	
 	# Selecting only one value (same query as above)
-	
 	my $product_name = $bs->row_get_one($product_id)->[1];
+
+
+	# Selecting only one row, but with HASH ref results (same query as above)
+                                    (add rowh_ at the begining)
+	my $product_hash_ref = $bs->rowh_get_one($product_id);
+	
 
 	# Inserting a row, with an auto_increment PK.
 	# Query:
@@ -394,6 +448,7 @@ SQL::Bibliosoph - A SQL Statements Library
 	#  UPDATE person SET age = age + 1 WHERE birthday = ?
 	
 	my $updated_persons = $bs->age_persons($today);
+
 
 
 =head1 DESCRIPTION
@@ -433,6 +488,10 @@ In order to use the same constants in your PERL code and your SQL modules, you c
 
 Define the search path for `constants_from`  PERL modules.
 
+=head3 benchmark
+
+Use this to enable Query profilling. The elapsed time (in miliseconds) will be printed
+to STDERR after each query execution.
 
 =head1 Bibliosoph
 

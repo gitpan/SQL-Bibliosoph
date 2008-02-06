@@ -9,6 +9,7 @@ WriteMakefile(
             'DBI' 				=> 1.5,
             'DBD::mysql' 		=> 4.004,
             'Test::More' 	    => undef,
+			'Time::HiRes'       => undef,
 			'Object::InsideOut' => undef,
 			'Carp'				=> undef,
 			'Package::Constants'=> undef,

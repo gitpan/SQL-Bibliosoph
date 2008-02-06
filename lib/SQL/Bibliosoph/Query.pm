@@ -6,11 +6,13 @@ package SQL::Bibliosoph::Query; {
 	use Package::Constants;
 	use Data::Dumper;
 	use DBI;
+    use Time::HiRes qw(gettimeofday tv_interval);
 
 	use vars qw($VERSION );
 	$VERSION = "1.2";
 
 	our $DEBUG = 1;
+	our $BENCHMARK = 0;
 
 	my @dbh		:Field 
 				:Arg(Name=> 'dbh', Mandatory=> 1) 
@@ -50,17 +52,16 @@ package SQL::Bibliosoph::Query; {
 
 	#------------------------------------------------------------------
 	sub select_many {
-		my ($self, $values) = @_;
-		return $self->pexecute($values)->fetchall_arrayref()
+		my ($self, $values, $splice) = @_;
+		return $self->pexecute($values)->fetchall_arrayref($splice)
 	}
-
 
 	#------------------------------------------------------------------
     # with sql_calc_found_rows
 	sub select_many2 {
-		my ($self, $values) = @_;
+		my ($self, $values,$splice) = @_;
 		return ( 
-            $self->pexecute($values)->fetchall_arrayref(),
+            $self->pexecute($values)->fetchall_arrayref($splice),
             $dbh[$$self]->selectrow_array('SELECT FOUND_ROWS()'),
         )
 	}
@@ -71,6 +72,13 @@ package SQL::Bibliosoph::Query; {
 	sub select_row {
 		my ($self,$values) = @_;
 		return $self->pexecute($values)->fetchrow_arrayref() || [];
+	}
+
+	#------------------------------------------------------------------
+    # Returns a hash ref
+	sub select_row_hash {
+		my ($self, $values) = @_;
+		return $self->pexecute($values)->fetchrow_hashref() || {};
 	}
 
 	#------------------------------------------------------------------
@@ -124,6 +132,8 @@ package SQL::Bibliosoph::Query; {
 	sub pexecute {
 		my ($self,$values) = @_;
 
+        my $start_time = [ gettimeofday ] if ($BENCHMARK);
+
 		# Completes the input array
 		# TODO -> IF fix_param_list
 		if (@$values < $bind_params[$$self]) {
@@ -159,6 +169,11 @@ package SQL::Bibliosoph::Query; {
                # $sth->err and $DBI::err will be true if error was from DBI
                carp __PACKAGE__." ERROR  $@"; # print the error
          }
+
+        if ($BENCHMARK) {
+            print STDERR "\t". tv_interval( $start_time ) *1000 . " ms \n";
+        }
+
 		return $sth[$$self];
 	}
 
