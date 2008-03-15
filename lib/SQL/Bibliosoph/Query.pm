@@ -18,6 +18,20 @@ package SQL::Bibliosoph::Query; {
 				:Arg(Name=> 'dbh', Mandatory=> 1) 
 				:Std(dbh);
 
+	my @delayed		:Field 
+			    	:Arg(Name=> 'delayed', Default=> 0) 
+				    :Std(delayed);
+
+    # Statement name (only for debugging)
+	my @name 		:Fields
+			    	:Arg(Name=> 'name', Default=> 'unknown') 
+				    :Std(name);
+
+    # Statement text
+	my @st	 		:Fields
+			    	:Arg(Name=> 'st', Mandatory=> 1) 
+				    :Std(st);
+
 	my @sth	 		:Fields;		# Statement handler
 	my @bind_links 	:Fields;		# Links in bind parameters
 	my @bind_params	:Fields;		# Count of bind parameters
@@ -33,10 +47,18 @@ package SQL::Bibliosoph::Query; {
 	# Constuctor
 	sub init :Init {
 		my ($self,$args) = @_;
-		print STDERR "Q#"."$$self," if $DEBUG; 
+        unless ($delayed[$$self]) {
+            $self->prepare();
+        }
+	}
 
-		my $st = $args->{st};
 
+	#------------------------------------------------------------------
+	sub prepare {
+        my ($self) = @_;
+
+		say ('Preparing "' . $name[$$self] . '"');
+		my $st = $st[$$self];
 
 		# Process bb language
 		my $numeric_fields  = $self->parse(\$st);
@@ -48,11 +70,15 @@ package SQL::Bibliosoph::Query; {
 		foreach (@$numeric_fields) {
 			$sth[$$self]->bind_param($_,100,DBI::SQL_INTEGER);
 		}
-	}
+        $delayed[$$self] = 0;
+    }
 
 	#------------------------------------------------------------------
 	sub select_many {
 		my ($self, $values, $splice) = @_;
+
+        $self->prepare() if $delayed[$$self];
+
 		return $self->pexecute($values)->fetchall_arrayref($splice)
 	}
 
@@ -60,6 +86,8 @@ package SQL::Bibliosoph::Query; {
     # with sql_calc_found_rows
 	sub select_many2 {
 		my ($self, $values,$splice) = @_;
+        $self->prepare() if $delayed[$$self];
+
 		return ( 
             $self->pexecute($values)->fetchall_arrayref($splice),
             $dbh[$$self]->selectrow_array('SELECT FOUND_ROWS()'),
@@ -71,6 +99,8 @@ package SQL::Bibliosoph::Query; {
 	# to do @{xxxx} in the caller
 	sub select_row {
 		my ($self,$values) = @_;
+        $self->prepare() if $delayed[$$self];
+
 		return $self->pexecute($values)->fetchrow_arrayref() || [];
 	}
 
@@ -78,12 +108,16 @@ package SQL::Bibliosoph::Query; {
     # Returns a hash ref
 	sub select_row_hash {
 		my ($self, $values) = @_;
+        $self->prepare() if $delayed[$$self];
+
 		return $self->pexecute($values)->fetchrow_hashref() || {};
 	}
 
 	#------------------------------------------------------------------
 	sub select_do {
 		my ($self, $values) = @_;
+        $self->prepare() if $delayed[$$self];
+
 		return $self->pexecute($values);
 	}
 
@@ -135,7 +169,6 @@ package SQL::Bibliosoph::Query; {
         my $start_time = [ gettimeofday ] if ($BENCHMARK);
 
 		# Completes the input array
-		# TODO -> IF fix_param_list
 		if (@$values < $bind_params[$$self]) {
 			$values->[$bind_params[$$self]-1] = undef;
 		}
@@ -145,7 +178,7 @@ package SQL::Bibliosoph::Query; {
 
 		# Use links
 		eval {
-			# Has Links?
+			# Has Numeric Links? ( i.e. 3? )
 			if ( my $l = $bind_links[$$self] ) {
 				#say("start:".Dumper($values), Dumper($l));
 
@@ -158,16 +191,15 @@ package SQL::Bibliosoph::Query; {
 				$sth[$$self]->execute (@v);
 			}
 
-			# No links, direct param mapping
+			# No links, direct param mapping ( ? ? )
 			else {
-				# TODO -> IF fix_param_list
 				$sth[$$self]->execute (@$values[0..$bind_params[$$self]-1]);
 			}
 		};
 
          if ($@) {
                # $sth->err and $DBI::err will be true if error was from DBI
-               carp __PACKAGE__." ERROR  $@"; # print the error
+               carp __PACKAGE__." ERROR  $@ in statement  '".$name[$$self]."': \"".$st[$$self].'\"'; # print the error
          }
 
         if ($BENCHMARK) {
@@ -221,6 +253,10 @@ SQL::Bibliosoph::Query - A SQL Prepared statement
 =item st 
 
 The SQL statement string, using BB syntax (SEE SQL::Bibliosoph::CatalogFile)
+
+=item name
+
+The SQL statement name. (only for debugging information, on statement error).
 
 =head2 destroy
 

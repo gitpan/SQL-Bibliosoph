@@ -8,7 +8,7 @@ package SQL::Bibliosoph; {
 	use SQL::Bibliosoph::CatalogFile;
 
 	use vars qw($VERSION );
-	$VERSION = "1.4";
+	$VERSION = "1.5";
 
 	our $DEBUG = 0;
 
@@ -31,6 +31,10 @@ END
 	my @dbh		:Field 
 				:Arg(Name=> 'dbh', Mandatory=> 1) 
 				:Std(dbh);
+
+	my @delayed	:Field 
+				:Arg(Name=> 'delayed', Default=> 0) 
+				:Std(delayed);
 
 	my @catalog	:Field 
 				:Type(ARRAY_ref)
@@ -64,6 +68,7 @@ END
 	sub init :Init {
 		my ($self) = @_;
 		say("Constructing Bibliosoph # $$self");;
+        
 		$self->init_all();
 	}
 
@@ -125,6 +130,7 @@ END
 		$self->create_queries_from($qs);
 		$self->create_methods_from($qs);
 	}
+
 	sub create_methods_from :Private {
 		my ($self,$q)  = @_;
 
@@ -151,7 +157,7 @@ END
 		}
 
 
-		say("Created methods for [".(keys %$q)."] queries.");
+		say("\tCreated methods for [".(keys %$q)."] queries.");
 	}
 
 
@@ -299,7 +305,7 @@ END
 			import $p;
 			my @cs = Package::Constants->list($p);
 
-			say("Constants from $p [".@cs."] ");
+			say("\tConstants from $p [".@cs."] ");
 
 
 			# DO Replace constants
@@ -329,6 +335,7 @@ END
 	#------------------------------------------------------------------
 	sub create_queries_from :Private {
 		my ($self,$qs) = @_;
+        my $i = 0;
 
 		while ( my ($name,$st) = each (%$qs) ) {
 			next if !$st;
@@ -338,12 +345,17 @@ END
 				delete $queries[$$self]->{$name};
 			}
 
-			#say("\tpreparing $name");
-
 			# Prepare the statement
 			$queries[$$self]->{$name}
-		   		= SQL::Bibliosoph::Query->new(dbh=>$dbh[$$self],st=>$st);	
+		   		= SQL::Bibliosoph::Query->new(
+                        dbh => $dbh[$$self],
+                        st  => $st, 
+                        name=> $name,
+                        delayed => $delayed[$$self],
+                  );	
+            $i++;                  
 		}
+		say("\tPrepared $i Statements". ( $delayed[$$self] ? " (delayed) " : '' ));
 	}
 
 	#------------------------------------------------------------------
@@ -366,7 +378,7 @@ SQL::Bibliosoph - A SQL Statements Library
 
 =head1 VERSION
 
-1.3
+1.4
 
 =head1 SYNOPSIS
 
@@ -487,6 +499,10 @@ In order to use the same constants in your PERL code and your SQL modules, you c
 =head3 constants_path
 
 Define the search path for `constants_from`  PERL modules.
+
+=head3 delayed 
+
+Do not prepare all the statements at startup. They will be prepared individualy,  when they are used for the first time. Defaults to false(0).
 
 =head3 benchmark
 
