@@ -11,26 +11,19 @@ package SQL::Bibliosoph::Query; {
 	use vars qw($VERSION );
 	$VERSION = "1.2";
 
-	our $DEBUG = 1;
-	our $BENCHMARK = 0;
+	our $DEBUG      = 1;
+	our $BENCHMARK  = 0;
+	our $QUIET      = 0;
 
-	my @dbh		:Field 
-				:Arg(Name=> 'dbh', Mandatory=> 1) 
-				:Std(dbh);
+	my @dbh		:Field :Arg(Name=> 'dbh', Mandatory=> 1) :Std(dbh);
 
-	my @delayed		:Field 
-			    	:Arg(Name=> 'delayed', Default=> 0) 
-				    :Std(delayed);
+	my @delayed		:Field :Arg(Name=> 'delayed', Default=> 0) :Std(delayed);
 
     # Statement name (only for debugging)
-	my @name 		:Fields
-			    	:Arg(Name=> 'name', Default=> 'unknown') 
-				    :Std(name);
+	my @name 		:Fields :Arg(Name=> 'name', Default=> 'unknown') :Std(name);
 
     # Statement text
-	my @st	 		:Fields
-			    	:Arg(Name=> 'st', Mandatory=> 1) 
-				    :Std(st);
+	my @st	 		:Fields :Arg(Name=> 'st', Mandatory=> 1) :Std(st);
 
 	my @sth	 		:Fields;		# Statement handler
 	my @bind_links 	:Fields;		# Links in bind parameters
@@ -193,17 +186,24 @@ package SQL::Bibliosoph::Query; {
 
 			# No links, direct param mapping ( ? ? )
 			else {
-				$sth[$$self]->execute (@$values[0..$bind_params[$$self]-1]);
+				$sth[$$self]->execute(@$values[0..$bind_params[$$self]-1]);
 			}
 		};
 
          if ($@) {
                # $sth->err and $DBI::err will be true if error was from DBI
-               carp __PACKAGE__." ERROR  $@ in statement  '".$name[$$self]."': \"".$st[$$self].'\"'; # print the error
+               carp __PACKAGE__." ERROR  $@ in statement  '".
+                $name[$$self]."': \"".$st[$$self].'\"'
+                unless $QUIET
+                ; # print the error
          }
 
         if ($BENCHMARK) {
-            print STDERR "\t". tv_interval( $start_time ) *1000 . " ms \n";
+
+            my $t = tv_interval( $start_time ) *1000;
+
+            # Only if it takes more that 1ms...
+            print STDERR "\t". $t . " ms \n" if $t > 1;
         }
 
 		return $sth[$$self];

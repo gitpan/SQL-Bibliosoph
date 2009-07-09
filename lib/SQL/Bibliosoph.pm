@@ -8,8 +8,9 @@ package SQL::Bibliosoph; {
 	use SQL::Bibliosoph::CatalogFile;
 
 	use vars qw($VERSION );
-	$VERSION = "1.5";
+	$VERSION = "1.6";
 
+	our $QUIET = 0;
 	our $DEBUG = 0;
 
 	my $STD = <<"END";
@@ -61,13 +62,17 @@ END
 						:Arg(Name=> 'constants_path')
 						:Std(constants_path);
 
-				
+    my @debug	:Field 
+						:Arg(Name=> 'debug')
+						:Std(debug);
+
 	my @queries	:Field;		# SQL::Bibliosoph::Query objects
 
 	# Constuctor
 	sub init :Init {
 		my ($self) = @_;
 		say("Constructing Bibliosoph # $$self");;
+        #print STDERR Dumper( "ARGS:", $dbh[$$self], " Catalog: ", $catalog[$$self]);
         
 		$self->init_all();
 	}
@@ -86,6 +91,8 @@ END
 		$SQL::Bibliosoph::CatalogFile::DEBUG = $DEBUG;
 		$SQL::Bibliosoph::Query::DEBUG = $DEBUG;
 
+
+		$SQL::Bibliosoph::Query::QUIET = $QUIET;
 		# Start Strings
 		foreach my $s ($STD, $catalog_str[$$self]) {
 			$self->do_all_for(SQL::Bibliosoph::CatalogFile->_parse($s));
@@ -152,6 +159,11 @@ END
 				$type = 'SELECT_CALC';
 			}
 
+# CALL no ALWAYS returns a results set!!            
+#			# Small exception3: CALL => Possible RESULT SET
+#			if ($st =~ /^CALL/is ) {
+#				$type = 'SELECT';
+#			}
 
 			$self->create_method_for(uc($type||''),$name);
 		}
@@ -345,14 +357,17 @@ END
 				delete $queries[$$self]->{$name};
 			}
 
-			# Prepare the statement
-			$queries[$$self]->{$name}
-		   		= SQL::Bibliosoph::Query->new(
-                        dbh => $dbh[$$self],
+            my $args =  {
+                         dbh => $dbh[$$self],
                         st  => $st, 
                         name=> $name,
                         delayed => $delayed[$$self],
-                  );	
+            };
+            #print STDERR " Query for ".Dumper($args);            
+
+			# Prepare the statement
+			$queries[$$self]->{$name} = SQL::Bibliosoph::Query->new( $args );
+
             $i++;                  
 		}
 		say("\tPrepared $i Statements". ( $delayed[$$self] ? " (delayed) " : '' ));
@@ -393,6 +408,10 @@ SQL::Bibliosoph - A SQL Statements Library
 			catalog  => [ qw(users products <billing) ],
     #       benchmark=> 1, # to enable statement benchmarking and debug
 	);
+
+
+    # To disable all debug output. 
+    # $SQL::Biblosoph::QUIET=1;
 
 	# Using dynamic generated functions.  Wrapper funtions 
 	# are automaticaly created on module initialization.
@@ -519,9 +538,7 @@ SQL::Bibliosoph by Matias Alejo Garcia (matias at confronte.com) and Lucas Lain 
 
 =head1 COPYRIGHT
 
-Copyright (c) 2007 Matias Alejo Garcia. All rights reserved.
-This program is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
+Copyright (c) 2007-2009 Matias Alejo Garcia. All rights reserved.  This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 
 =head1 SUPPORT / WARRANTY
 
@@ -538,10 +555,9 @@ At	http://nits.com.ar/bibliosoph you can find:
 	* VIM syntax highlighting definitions for bb files
 	* CTAGS examples for indexing bb files.
 
+    You can also find the vim and ctags files in the /etc subdirectory.
 
-=head1 ACKNOWLEDGEMENTS
-
-To Confronte.com and its associates to support the development of this module.
+    Lasted version at: http://github.com/matiu/SQL--Bibliosoph/tree/master
 
 =head1 BUGS
 
