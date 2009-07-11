@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               SQL-Bibliosoph
-version:            1.7
+version:            1.8
 abstract:           A SQL Query library
 author:
     - Matias Alejo Garcia ( matiu@cpan.org ) 
@@ -12,12 +12,15 @@ build_requires:
     ExtUtils::MakeMaker:  0
 requires:
     Carp:                ~
+    DBD::Mock:           ~
     DBD::mysql:          4.004
     DBI:                 1.5
     Object::InsideOut:   ~
     Package::Constants:  ~
     Switch:              ~
-    Test::More:          ~
+    Test::More:          0.92
+    Tie::Array::Random:  1
+    Tie::Hash::Random:   1
     Time::HiRes:         ~
 no_index:
     directory:
