@@ -78,123 +78,103 @@ Will generate random date when you call any subrotine on it.  This module is ins
 =cut
 
 package SQL::Bibliosoph::Sims; {
-    use Object::InsideOut;
-    use strict;
-    use utf8;
+    use Moose;
     use Carp;
     use Data::Dumper;
 
-	use vars qw($VERSION );
-	$VERSION = "1.8";
+	our $VERSION = "2.0";
+    our $AUTOLOAD;
 
     use SQL::Bibliosoph::CatalogFile;
 
     use Tie::Array::Random;
     use Tie::Hash::Random;
     use Data::Random qw(:all);
-    use Switch;
+    use feature qw/switch/;
+    use Data::Dumper;
 
-    my @rows    :Field :Arg(Name=>'rows', Default=>10);
-    my @presets :Field :Arg(Name=>'presets', Type=> 'HASH_ref');
-    my @presets_catalog :Field :Arg(Name=>'presets_catalog');
+    has rows    => (is => 'rw', isa => 'Int', default=> '10');
+    has presets => (is => 'rw', isa => 'HashRef', default=> sub { return {};  } );
+    has presets_catalog => (is => 'rw', isa => 'Str');
 
-    sub _init :Init {
+    sub BUILD {
         my ($self) = @_;
         my $qs;
 
-        my $file = $presets_catalog[$$self];
+        # Add catalog's presets, if any.
+
+        my $file = $self->presets_catalog();
         if ($file) {
 
             die "$file: $!" if ! -e $file;
 
             my  $qs = SQL::Bibliosoph::CatalogFile->new( file => $file )->read();
-            $self->create_presets($qs); 
+
+            while (my ($k, $v) = each %$qs) {
+                $self->presets()->{$k} = $v;
+
+            }
         }
-
-
-        if (my $qs = $presets[$$self]) {
-            $self->create_presets($qs);
-        }
-
-
 
         return $self;
     }
 
-    sub create_presets :Private {
-        my ($self, $qs) = @_;
 
-        no strict 'refs';
-        no warnings 'redefine';
+    sub AUTOLOAD {
+        my $self        = shift;
+        (my $method_name = $AUTOLOAD ) =~ s/^.*:://;
+        my $ret;
 
-        foreach my $name ( keys %$qs ) {
-            my $value = $qs->{$name};
+        my $rows = $self->rows();
 
-            # Is this a refence?
-            *{__PACKAGE__.'::'.$name} = sub {
-                my ($that) = shift;
 
-                my $ret = eval $value;
-                if ($@) {  die "error in $value : $@"; };
+        die "no method name @_" if ! $method_name;
+
+        if (my $return = $self->presets()->{$method_name}) {
+            my $ret = eval $return;
+            if ($@) {
+                die "Error in \"$method_name\": $@\n $return \n";
+            }
+            return $ret;
+        }
+
+
+        given ($method_name) {
+            when (/\browh_/)  {
+                my %hash;
+                tie %hash, 'Tie::Hash::Random';
+                $ret = \%hash;
 
                 return $ret;
-            };
-        }            
-    }
+            }
+            when (/\brow_/)  {
+                my @array;
+                tie @array, 'Tie::Array::Random';
+                $ret = \@array;
 
-
-
-    sub _default :Automethod {
-        my ($self) = @_;
-        my @args   = @_;
-        my $method_name = $_;
-
-        # This class can handle the method directly
-        my $handler = sub {
-
-            my $self = shift;
-            my $ret;
-            my $rows = $rows[$$self];
-
-            switch ($method_name) {
-                case qr/\browh_/  {
+                return $ret;
+            }
+            when (/\bh_/)  {
+                my $ret = [];
+                foreach (1..$rows) {
                     my %hash;
                     tie %hash, 'Tie::Hash::Random';
-                    $ret = \%hash;
-
-                    return $ret;
+                    push @$ret, \%hash;
                 }
-                case qr/\brow_/  {
+                return wantarray  ? ($ret,$rows) : $ret;
+            }
+            default {
+                my $ret = [];
+                foreach (1..$rows) {
                     my @array;
                     tie @array, 'Tie::Array::Random';
-                    $ret = \@array;
-
-                    return $ret;
+                    push @$ret, \@array;
                 }
-                case qr/\bh_/  {
-                    my $ret = [];
-                    foreach (1..$rows) {
-                        my %hash;
-                        tie %hash, 'Tie::Hash::Random';
-                        push @$ret, \%hash;
-                    }
-                    return wantarray  ? ($ret,$rows) : $ret;
-                }
-                else {
-                    my $ret = [];
-                    foreach (1..$rows) {
-                        my @array;
-                        tie @array, 'Tie::Array::Random';
-                        push @$ret, \@array;
-                    }
-                    return wantarray  ? ($ret,$rows) : $ret;
-                }
+                return wantarray  ? ($ret,$rows) : $ret;
             }
-
         };
-
-        return ($handler);
     }
+
 }
 
 

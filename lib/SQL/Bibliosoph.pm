@@ -1,113 +1,53 @@
 package SQL::Bibliosoph; {
-	use Object::InsideOut;
-	use strict;
-    use utf8;
-	use Carp;
+	use Moose;
+
+    use Carp;
 	use Data::Dumper;
 	use SQL::Bibliosoph::Query;
 	use SQL::Bibliosoph::CatalogFile;
 
-	use vars qw($VERSION );
-	$VERSION = "1.8";
+    our $VERSION = "2.00";
 
-	our $QUIET = 0;
-	our $DEBUG = 0;
 
-	my $STD = <<"END";
+    has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
+    has 'catalog'   => ( is => 'ro', isa => 'ArrayRef', default => sub { return [] } );
+    has 'catalog_str'=>( is => 'ro', isa => 'Str');
 
---[	 LAST ]		
-	SELECT LAST_INSERT_ID()
+    has 'constants_from' =>( is => 'ro', isa => 'Str');
 
---[	FOUND ]
-	SELECT FOUND_ROWS()
+    has 'delayed'   => ( is => 'ro', isa => 'Bool', default=> 0);
+    has 'debug'     => ( is => 'ro', isa => 'Bool', default=> 0);
+    has 'benchmark' => ( is => 'ro', isa => 'Bool', default=> 0);
 
---[ ROWS ]
-	SELECT ROW_COUNT()
+    has 'queries'   => ( is => 'rw', default=> sub { return {}; } );
 
---[ VERSION ]
-	SELECT VERSION()
-
-END
-
-	my @dbh		:Field 
-				:Arg(Name=> 'dbh', Mandatory=> 1) 
-				:Std(dbh);
-
-	my @delayed	:Field 
-				:Arg(Name=> 'delayed', Default=> 0) 
-				:Std(delayed);
-
-	my @catalog	:Field 
-				:Type(ARRAY_ref)
-				:Arg(Name=> 'catalog') 
-				:Std(catalog);
-
-	my @catalog_str	:Field 
-					:Arg(Name=> 'catalog_str') 
-					;
-
-	my @path	:Field 
-				:Arg(Name=> 'path', Default=> '.')
-				:Std(path);
-
-	my @benchmark	
-                :Field 
-				:Arg(Name=> 'benchmark');
-
-	my @constants	:Field 
-					:Arg(Name=> 'constants_from')
-					:Std(constants_from);
-
-	my @constants_path	:Field 
-						:Arg(Name=> 'constants_path')
-						:Std(constants_path);
-
-    my @debug	:Field 
-						:Arg(Name=> 'debug')
-						:Std(debug);
-
-	my @queries	:Field;		# SQL::Bibliosoph::Query objects
-
-	# Constuctor
-	sub init :Init {
-		my ($self) = @_;
-		say("Constructing Bibliosoph # $$self");;
-        #print STDERR Dumper( "ARGS:", $dbh[$$self], " Catalog: ", $catalog[$$self]);
-        
-		$self->init_all();
+	sub d {
+        my $self = shift;
+	    print STDERR join (' ', map { $_ // 'NULL'  } @_ ) ."\n" if $self->debug(); 
 	}
 
+	#------------------------------------------------------------------
 
-	sub init_all :Private {
+	sub BUILD {
 		my ($self) = @_;
 
-        # Benchmarking enabled?? Trigger debug.
-        if ($benchmark[$$self]) {
-		    $SQL::Bibliosoph::Query::BENCHMARK = 1;
-            $DEBUG = 1;
-        }
+		$self->d( "Constructing Bibliosoph " ) ;
 
-		# propagates debug
-		$SQL::Bibliosoph::CatalogFile::DEBUG = $DEBUG;
-		$SQL::Bibliosoph::Query::DEBUG = $DEBUG;
-
-
-		$SQL::Bibliosoph::Query::QUIET = $QUIET;
 		# Start Strings
-		foreach my $s ($STD, $catalog_str[$$self]) {
-			$self->do_all_for(SQL::Bibliosoph::CatalogFile->_parse($s));
-		}
+        $self->do_all_for(SQL::Bibliosoph::CatalogFile->_parse($self->catalog_str()))
+            if $self->catalog_str();                
 
 
 		# Start files
-		foreach my $fname (@{$catalog[$$self]}) {
+		foreach my $fname (@{ $self->catalog() }) {
 			$self->do_all_for(
 				SQL::Bibliosoph::CatalogFile->new(
 							file 			=> $fname, 
-							path 			=> $path[$$self],
 				)->read()
 			);
 		}
+
+        # $self->dbg($self->dump());
 	}
 	
 	# -------------------------------------------------------------------------
@@ -119,26 +59,25 @@ END
 
 		my $str='';
 
-		foreach (keys %{$queries[$$self]}) {
-			$str .= $queries[$$self]->{$_}->dump();
+		foreach (values %{ $self->queries() }) {
+			$str .= $_->dump();
 		}
+
 		return $str;
 	}
 
 	# -------------------------------------------------------------------------
 	# Privates
 	# -------------------------------------------------------------------------
-	sub do_all_for :Private {
+	sub do_all_for  {
 		my ($self,$qs) = @_;
-
-		croak 'No Database handler at '.__PACKAGE__ if ! $dbh[$$self];
 
 		$self->replace_contants($qs);
 		$self->create_queries_from($qs);
 		$self->create_methods_from($qs);
 	}
 
-	sub create_methods_from :Private {
+	sub create_methods_from {
 		my ($self,$q)  = @_;
 
 		while ( my ($name,$st) = each (%$q) ) {
@@ -169,20 +108,18 @@ END
 		}
 
 
-		say("\tCreated methods for [".(keys %$q)."] queries.");
+		$self->d("\tCreated methods for [".(keys %$q)."] queries.");
 	}
 
-
-
 	
-	sub create_method_for :Private {
+	sub create_method_for {
 		my ($self,$type,$name) = @_;
 		$_ = $type;
 		SW: {
 			no strict 'refs';
 			no warnings 'redefine';
 
-
+            # TODO change to $self->meta->create_method();
 
 			/^SELECT\b/ && do {
 				# Returns
@@ -191,8 +128,8 @@ END
 				# Many
 				*$name = sub {
 					my ($that) = shift;
-					dbg_me('many ',$name,@_);
-					return $queries[$$that]->{$name}->select_many([@_]);
+					$self->d('many ',$name,@_);
+					return $self->queries()->{$name}->select_many([@_]);
 				};
 
 				# Many, hash
@@ -200,8 +137,8 @@ END
                 # Many
 				*$name_row = sub {
 					my ($that) = shift;
-					dbg_me('manyh ',$name,@_);
-					return $queries[$$that]->{$name}->select_many([@_],{});
+					$self->d('manyh ',$name,@_);
+					return $self->queries()->{$name}->select_many([@_],{});
 				};
 
 				# Row
@@ -209,8 +146,8 @@ END
 
 				*$name_row = sub {
 					my ($that) = shift;
-					dbg_me('row  ',$name,@_);
-					return $queries[$$that]->{$name}->select_row([@_]);
+					$self->d('row  ',$name,@_);
+					return $self->queries()->{$name}->select_row([@_]);
 				};
 
 				# Row hash
@@ -218,8 +155,8 @@ END
 
 				*$name_row = sub {
 					my ($that) = shift;
-					dbg_me('rowh  ',$name,@_);
-					return $queries[$$that]->{$name}->select_row_hash([@_]);
+					$self->d('rowh  ',$name,@_);
+					return $self->queries()->{$name}->select_row_hash([@_]);
 				};
 				last SW;
 			};
@@ -233,12 +170,12 @@ END
 				# Many
 				*$name = sub {
 					my ($that) = shift;
-					dbg_me('many ',$name,@_);
+					$self->d('many ',$name,@_);
 
 
 					return wantarray 
-						? $queries[$$that]->{$name}->select_many2([@_])
-						: $queries[$$that]->{$name}->select_many([@_]) 
+						? $self->queries()->{$name}->select_many2([@_])
+						: $self->queries()->{$name}->select_many([@_]) 
 						;
 				};
 
@@ -246,11 +183,11 @@ END
 				my $nameh = 'h_'.$name;
 				*$nameh = sub {
 					my ($that) = shift;
-					dbg_me('manyh ',$name,@_);
+					$self->d('manyh ',$name,@_);
 
 					return wantarray 
-						? $queries[$$that]->{$name}->select_many2([@_],{})
-						: $queries[$$that]->{$name}->select_many([@_],{}) 
+						? $self->queries()->{$name}->select_many2([@_],{})
+						: $self->queries()->{$name}->select_many([@_],{}) 
 						;
 				};
 	
@@ -266,9 +203,9 @@ END
 				# do
 				*$name = sub {
 					my ($that) = shift;
-					dbg_me('inse ',$name,@_);
+					$self->d('inse ',$name,@_);
 					
-					my $ret = $queries[$$that]
+					my $ret = $self->queries()
 								->{$name}
 								->select_do([@_]);
 
@@ -291,9 +228,9 @@ END
 			#  scalar :  SQL_ROWS (modified rows)
 			*$name = sub {
 				my ($that) = shift;
-				dbg_me('oth  ',$name,@_);
+				$self->d('oth  ',$name,@_);
 
-				return $queries[$$that]
+				return $self->queries()
 							->{$name}
 							->select_do([@_])
 							->rows();
@@ -302,27 +239,26 @@ END
 	}
 
 	#------------------------------------------------------------------
-	sub replace_contants :Private {
+	sub replace_contants {
 		my ($self,$qs)  =@_;
 
-		my $p = $constants[$$self];
-		return if !$p;
-
+		my $p = $self->constants_from() or return;
 
 		eval {
-			push @INC, $constants_path[$$self] if $constants_path[$$self];
 
 			# Read constants
 			eval "require $p";
+
 			import $p;
 			my @cs = Package::Constants->list($p);
 
-			say("\tConstants from $p [".@cs."] ");
+			$self->d("\tConstants from $p [".@cs."] ");
 
 
 			# DO Replace constants
 			foreach my $v (values %$qs) {
 				next if !$v;
+
 				foreach my $key (@cs) {
 					my $value = eval "$key" ;
 					$v =~ s/\b$key\b/$value/g;
@@ -330,22 +266,13 @@ END
 			}
 		};
 		if ($@) {
-			die "error importing constants : $@";
+			die "error importing constants from $p : $@";
 		}
 	}
 
 
 	#------------------------------------------------------------------
-
-	sub dbg_me :Private {
-		my ($what,$name,@values) =@_;
-		say("$what $name "
-				.   join(',', map { defined $_ ?  $_  : 'NULL' } @values ) 
-		);
-	}
-
-	#------------------------------------------------------------------
-	sub create_queries_from :Private {
+	sub create_queries_from {
 		my ($self,$qs) = @_;
         my $i = 0;
 
@@ -353,30 +280,26 @@ END
 			next if !$st;
 
 			# Previous exists?
-			if ( $queries[$$self]->{$name}  ) {
-				delete $queries[$$self]->{$name};
+			if ( $self->queries()->{$name}  ) {
+				delete $self->queries()->{$name};
 			}
 
             my $args =  {
-                         dbh => $dbh[$$self],
-                        st  => $st, 
-                        name=> $name,
-                        delayed => $delayed[$$self],
+                        dbh     => $self->dbh(),
+                        st      => $st, 
+                        name    => $name,
+                        delayed => $self->delayed(),
             };
             #print STDERR " Query for ".Dumper($args);            
 
 			# Prepare the statement
-			$queries[$$self]->{$name} = SQL::Bibliosoph::Query->new( $args );
+			$self->queries()->{$name} = SQL::Bibliosoph::Query->new( $args );
 
             $i++;                  
 		}
-		say("\tPrepared $i Statements". ( $delayed[$$self] ? " (delayed) " : '' ));
+		$self->d("\tPrepared $i Statements". ( $self->delayed() ? " (delayed) " : '' ));
 	}
 
-	#------------------------------------------------------------------
-	sub say {
-		print STDERR "@_\n" if $DEBUG; 
-	}
 
 
 }
@@ -391,27 +314,18 @@ __END__
 
 SQL::Bibliosoph - A SQL Statements Library 
 
-=head1 VERSION
-
-1.4
-
 =head1 SYNOPSIS
 
 	use SQL::Bibliosoph;
 
 
-    # To enable DEBUG, set:
-    # $SQL::Biblosoph::DEBUG=1;
-
 	my $bs = SQL::Biblioshoph->new(
 			dsn		 => $database_handle,
 			catalog  => [ qw(users products <billing) ],
-    #       benchmark=> 1, # to enable statement benchmarking and debug
+    #       benchmark=> 1,      # to enable statement benchmarking and debug
+    #       debug    => 1,      # to enable debug to STDERR
 	);
 
-
-    # To disable all debug output. 
-    # $SQL::Biblosoph::QUIET=1;
 
 	# Using dynamic generated functions.  Wrapper funtions 
 	# are automaticaly created on module initialization.
@@ -512,12 +426,8 @@ Allows to define a SQL catalog using a string (not a file). The queries will be 
 	
 =head3 constants_from 
 
-In order to use the same constants in your PERL code and your SQL modules, you can declare a module using `constants_from` paramenter. Constants exported in that module (using @EXPORT) will be replaced in all catalog file before SQL preparation.
+In order to use the same constants in your PERL code and your SQL modules, you can declare a module using `constants_from` paramenter. Constants exported in that module (using @EXPORT) will be replaced in all catalog file before SQL preparation. The module must be in the @INC path.
 
-
-=head3 constants_path
-
-Define the search path for `constants_from`  PERL modules.
 
 =head3 delayed 
 
@@ -528,13 +438,17 @@ Do not prepare all the statements at startup. They will be prepared individualy,
 Use this to enable Query profilling. The elapsed time (in miliseconds) will be printed
 to STDERR after each query execution.
 
+=head3 debug
+
+To enable debug (prints each query, and arguments, very useful during development).
+
 =head1 Bibliosoph
 
 n. person having deep knowledge of books. bibliognostic.
 
 =head1 AUTHORS
 
-SQL::Bibliosoph by Matias Alejo Garcia (matias at confronte.com) and Lucas Lain (lucas at confronte.com).
+SQL::Bibliosoph by Matias Alejo Garcia (matiu at cpan.org) and Lucas Lain (lucas at confronte.com).
 
 =head1 COPYRIGHT
 
