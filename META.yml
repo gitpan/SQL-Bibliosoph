@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               SQL-Bibliosoph
-version:            2.01
+version:            2.02
 abstract:           A SQL Query library
 author:
     - Matias Alejo Garcia ( matiu@cpan.org ) 
@@ -15,6 +15,7 @@ requires:
     DBD::Mock:           ~
     DBD::mysql:          4.004
     DBI:                 1.5
+    Devel::Cover:        ~
     Moose:               0.82
     Package::Constants:  ~
     Test::More:          0.88
