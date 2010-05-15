@@ -3,23 +3,28 @@ package SQL::Bibliosoph; {
 
     use Carp;
 	use Data::Dumper;
+    use Digest::MD5 qw/ md5_hex /;
+    use Cache::Memcached::Fast;
+
 	use SQL::Bibliosoph::Query;
 	use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.04";
+    our $VERSION = "2.10";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
     has 'catalog'   => ( is => 'ro', isa => 'ArrayRef', default => sub { return [] } );
-    has 'catalog_str'=>( is => 'ro', isa => 'Str');
+    has 'catalog_str'=>( is => 'ro', isa => 'Maybe[Str]');
+    has 'memcached_address' => ( is => 'ro', isa => 'Maybe[Str]' );
 
-    has 'constants_from' =>( is => 'ro', isa => 'Str');
+    has 'constants_from' =>( is => 'ro', isa => 'Maybe[Str]');
 
     has 'delayed'   => ( is => 'ro', isa => 'Bool', default=> 0);
     has 'debug'     => ( is => 'ro', isa => 'Bool', default=> 0);
     has 'benchmark' => ( is => 'ro', isa => 'Num', default=> 0);
 
     has 'queries'   => ( is => 'rw', default=> sub { return {}; } );
+    has 'memc'      => ( is => 'rw');
 
     ## OLD (just for backwards compat)
     has 'path' => ( is => 'rw', isa => 'Str', default=> '');
@@ -51,6 +56,28 @@ package SQL::Bibliosoph; {
 				)->read()
 			);
 		}
+
+        #
+        if ($self->memcached_address() ) {
+            $self->d('Using memcached server at '.$self->memcached_address(). "\n");
+
+            $self->memc( new Cache::Memcached::Fast({
+                    servers => [ { address => $self->memcached_address() },
+                    ],
+                    namespace => 'biblio:',
+                    compress_threshold => 100_000,
+                    compress_ratio => 0.9,
+                    max_failures => 3,
+                    failure_timeout => 5,
+                    nowait => 1,
+                    hash_namespace => 1,
+                    serialize_methods => [ \&Storable::freeze, \&Storable::thaw ],
+#                    utf8 => 1,
+                    max_size => 512 * 1024,
+            }));
+
+            $self->d('Could not connect to memcached') if ! $self->memc();
+        }
 
         # $self->dbg($self->dump());
 	}
@@ -163,6 +190,46 @@ package SQL::Bibliosoph; {
 					$self->d('rowh  ',$name,@_);
 					return $self->queries()->{$name}->select_row_hash([@_]);
 				};
+
+				# Many, hash, memcached
+				$name_row = 'ch_'.$name;
+
+                # Many
+				*$name_row = sub {
+					my ($that) = shift;
+                    my $ttl;
+                    my $cfg  = shift @_;
+
+					$self->d('manyCh',$name,@_);
+
+                    croak "we calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword" if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
+
+                    if (! $self->memc() ) {
+                        $self->d("\n\tMemcached is NOT used, no server is defined");
+					    return $self->queries()->{$name}->select_many([@_],{});
+                    }
+
+
+                    ## check memcached
+                    my $md5 = md5_hex( join ('', $name, map { $_ // 'NULL'  } @_ ));
+                    my $ret;
+
+                    $ret = $self->memc()->get($md5) ;
+
+                    if (! defined ($ret) ) { 
+                        $self->d("\t[running SQL & storing memc]\n");
+					    $ret = $self->queries()->{$name}->select_many([@_],{});
+                        $self->memc()->set($md5, $ret, $ttl);
+                    }
+                    else {
+                        $self->d("\t[from memc]\n");
+                    }
+
+                    return $ret;
+				};
+
+
+
 				last SW;
 			};
 
@@ -188,6 +255,7 @@ package SQL::Bibliosoph; {
 				my $nameh = 'h_'.$name;
 				*$nameh = sub {
 					my ($that) = shift;
+
 					$self->d('manyh ',$name,@_);
 
 					return wantarray 
@@ -195,6 +263,54 @@ package SQL::Bibliosoph; {
 						: $self->queries()->{$name}->select_many([@_],{}) 
 						;
 				};
+
+				# Many, hash, memcached
+				my $nameh2 = 'ch_'.$name;
+
+                # Many
+				*$nameh2 = sub {
+					my ($that) = shift;
+                    my $ttl;
+                    my $cfg  = shift @_;
+
+					$self->d('manyCh',$name,@_);
+
+                    croak "we calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword" if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
+
+                    if (! $self->memc() ) {
+                        $self->d("\n\tMemcached is NOT used, no server is defined");
+                        return wantarray 
+                            ? $self->queries()->{$name}->select_many2([@_],{})
+                            : $self->queries()->{$name}->select_many([@_],{}) 
+                            ;
+                    }
+
+
+                    ## check memcached
+                    my $md5 = md5_hex( join ('', $name, map { $_ // 'NULL'  } @_ ));
+                    my $md5c = $md5 . '_count';
+                    my ($ret1, $ret2);
+
+                    $ret1 = $self->memc()->get($md5) ;
+                    $ret2 = $self->memc()->get($md5c) ;
+
+                    if (! defined ($ret1) ) { 
+                        $self->d("\t[running SQL & storing memc]\n");
+                        ($ret1, $ret2) = $self->queries()->{$name}->select_many2([@_],{});
+
+                        $self->memc()->set($md5, $ret1, $ttl);
+                        $self->memc()->set($md5c, $ret2, $ttl);
+                    }
+                    else {
+                        $self->d("\t[from memc]\n");
+                    }
+
+                    return wantarray 
+                        ? ($ret1, $ret2)
+                        : $ret1
+                        ;
+				};
+
 	
 				last SW;
 			};
@@ -222,6 +338,8 @@ package SQL::Bibliosoph; {
 						;
 
 				};
+
+
 				last SW;
 			};	
 
@@ -332,6 +450,7 @@ SQL::Bibliosoph - A SQL Statements Library
     #       benchmark=> 0.5,      # to enable statement benchmarking and debug 
     #                               0.5 = log queries that takes more than half second
     #       debug    => 1,      # to enable debug to STDERR
+    #       memcached_address => '127.0.0.1:11322',
 	);
 
 
@@ -366,6 +485,13 @@ SQL::Bibliosoph - A SQL Statements Library
 	# The same, but with an array of hashs result (add h_ at the begining)
 
 	my $products_array_of_hash_ref = $bs->h_get_products($country,$price,$start,$limit);
+
+
+	# The same, but using memcached, with a TTL of 10 secs
+    # (memcached queries are only generated for hash, multiple rows, results h_QUERY)
+
+	my $products_array_of_hash_ref = $bs->ch_get_products({ttl => 10 }, $country,$price,$start,$limit);
+	
 	
 
 	# Selecting only one row (add row_ at the begining)
@@ -392,6 +518,10 @@ SQL::Bibliosoph - A SQL Statements Library
 	#  INSERT INTO person (name,age) VALUES (?,?);
 	
 	my $last_insert_id = $bs->insert_person($name,$age);
+
+
+    # Usefull when no primary key is defined
+	my ($dummy_last_insert_id, $total_inserted) = $bs->insert_person($name,$age);
 
 
 	# Updating some rows
@@ -461,7 +591,7 @@ SQL::Bibliosoph by Matias Alejo Garcia (matiu at cpan.org) and Lucas Lain (lucas
 
 =head1 COPYRIGHT
 
-Copyright (c) 2007-2009 Matias Alejo Garcia. All rights reserved.  This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+Copyright (c) 2007-2010 Matias Alejo Garcia. All rights reserved.  This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 
 =head1 SUPPORT / WARRANTY
 

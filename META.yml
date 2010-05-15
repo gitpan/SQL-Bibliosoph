@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               SQL-Bibliosoph
-version:            2.04
+version:            2.10
 abstract:           A SQL Query library
 author:
     - Matias Alejo Garcia ( matiu@cpan.org ) 
@@ -11,23 +11,25 @@ configure_requires:
 build_requires:
     ExtUtils::MakeMaker:  0
 requires:
-    Carp:                ~
-    DBD::Mock:           ~
-    DBD::mysql:          4.004
-    DBI:                 1.5
-    Devel::Cover:        ~
-    Moose:               0.82
-    Package::Constants:  ~
-    perl:                5.010000
-    Test::More:          0.88
-    Tie::Array::Random:  1
-    Tie::Hash::Random:   1
-    Time::HiRes:         ~
+    Cache::Memcached::Fast:  0.17
+    Carp:                 ~
+    DBD::Mock:            ~
+    DBD::mysql:           4.004
+    DBI:                  1.5
+    Devel::Cover:         ~
+    Digest::MD5:          2.39
+    Moose:                0.82
+    Package::Constants:   ~
+    perl:                 5.010000
+    Test::More:           0.88
+    Tie::Array::Random:   1
+    Tie::Hash::Random:    1
+    Time::HiRes:          ~
 no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.52
+generated_by:       ExtUtils::MakeMaker version 6.55_02
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4
