@@ -9,7 +9,7 @@ package SQL::Bibliosoph; {
 	use SQL::Bibliosoph::Query;
 	use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.10";
+    our $VERSION = "2.11";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
@@ -66,14 +66,13 @@ package SQL::Bibliosoph; {
                     ],
                     namespace => 'biblio:',
                     compress_threshold => 100_000,
-                    compress_ratio => 0.9,
                     max_failures => 3,
                     failure_timeout => 5,
                     nowait => 1,
                     hash_namespace => 1,
                     serialize_methods => [ \&Storable::freeze, \&Storable::thaw ],
-#                    utf8 => 1,
                     max_size => 512 * 1024,
+#                    utf8 => 1,
             }));
 
             $self->d('Could not connect to memcached') if ! $self->memc();
@@ -214,7 +213,7 @@ package SQL::Bibliosoph; {
                     my $md5 = md5_hex( join ('', $name, map { $_ // 'NULL'  } @_ ));
                     my $ret;
 
-                    $ret = $self->memc()->get($md5) ;
+                    $ret = $self->memc()->get($md5) unless $cfg->{refresh} ;
 
                     if (! defined ($ret) ) { 
                         $self->d("\t[running SQL & storing memc]\n");
@@ -291,8 +290,10 @@ package SQL::Bibliosoph; {
                     my $md5c = $md5 . '_count';
                     my ($ret1, $ret2);
 
-                    $ret1 = $self->memc()->get($md5) ;
-                    $ret2 = $self->memc()->get($md5c) ;
+                    unless ( $cfg->{refresh} ) {
+                        $ret1 = $self->memc()->get($md5) ;
+                        $ret2 = $self->memc()->get($md5c) ;
+                    }
 
                     if (! defined ($ret1) ) { 
                         $self->d("\t[running SQL & storing memc]\n");
@@ -492,6 +493,9 @@ SQL::Bibliosoph - A SQL Statements Library
 
 	my $products_array_of_hash_ref = $bs->ch_get_products({ttl => 10 }, $country,$price,$start,$limit);
 	
+    # Force refresh, with SQL access, and sets memcached cache for 10 secs.
+    #
+	my $products_array_of_hash_ref = $bs->ch_get_products({ttl => 10, refresh => }, $country,$price,$start,$limit);
 	
 
 	# Selecting only one row (add row_ at the begining)

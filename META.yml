@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               SQL-Bibliosoph
-version:            2.10
+version:            2.11
 abstract:           A SQL Query library
 author:
     - Matias Alejo Garcia ( matiu@cpan.org ) 
