@@ -9,7 +9,7 @@ package SQL::Bibliosoph; {
     use SQL::Bibliosoph::Query;
     use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.15";
+    our $VERSION = "2.16";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
@@ -158,7 +158,6 @@ package SQL::Bibliosoph; {
            # USE LIKE THAT : /* SELECT */ CALL => Possible RESULT SET
            elsif ($st =~ /\bSELECT\b.*\bCALL\b/is ) {
                $type = 'SELECT';
-                next;
            }
 
             $self->create_method_for(uc($type||''),$name);
