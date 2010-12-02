@@ -5,11 +5,12 @@ package SQL::Bibliosoph; {
     use Data::Dumper;
     use Digest::MD5 qw/ md5_hex /;
     use Cache::Memcached::Fast;
+    use Storable;
 
     use SQL::Bibliosoph::Query;
     use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.18";
+    our $VERSION = "2.20";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
@@ -66,11 +67,11 @@ package SQL::Bibliosoph; {
                     servers => [ { address => $self->memcached_address() },
                     ],
                     namespace           => 'biblio:',
-                    compress_threshold  => 10_000,
+                    compress_threshold  => 100_000,
                     failure_timeout     => 5,
-                    hash_namespace      => 1,
-                    serialize_methods   => [ \&Storable::freeze, \&Storable::thaw ],
-                    max_size            => 512 * 1024,
+#                    hash_namespace      => 1, #default => 0
+#                    serialize_methods   => [ \&Storable::freeze, \&Storable::thaw ],
+#                    max_size            => 512 * 1024, #default => 1024* 1024
 #                    nowait              => 1,
 #                    max_failures        => 3,
 #                    utf8 => 1,
@@ -129,7 +130,11 @@ package SQL::Bibliosoph; {
         my ($self, $group) = @_;
 
         if ( $self->memc() ) {
+            $self->d("Expiring group $group\n");
             $self->memc()->incr($group,1);
+        }
+        else {
+            $self->d("Could not expire \"$group\" -> Memcached not configured\n");
         }
     }
 
@@ -243,12 +248,23 @@ package SQL::Bibliosoph; {
 
                     my $ret;
 
-                    $ret = $self->memc()->get($md5);
+                    if (! $cfg->{force} ) {
+                        $ret = $self->memc()->get($md5);
+                        
+                    }
+                    else {
+                        $self->d("\n\t[forced to run SQL query & store result in memc 2]\n");
+                    }
+                    
+                    if (! defined $ret ) { 
+                        $self->d("\t[running SQL & storing memc $md5]\n");
 
-                    if (! defined ($ret) ) { 
-                        $self->d("\t[running SQL & storing memc]\n");
+#print "cfg:" . Dumper($cfg); 
+#print "ret:" . Dumper($ret); 
+
                         $ret = $self->queries()->{$name}->select_many([@_],{});
 
+#print "AFTER: ret:" . Dumper($ret); 
                         # $ret could be undefined is query had an error!
                         $self->memc()->set($md5, $ret, $ttl) if defined $ret;
                     }
@@ -314,25 +330,28 @@ package SQL::Bibliosoph; {
                             ;
                     }
 
-
-                    ## check memcached
+                    my ($val, $count);
                     my $md5 = md5_hex( join ('', $name, map { $_ // 'NULL'  } @_ ));
                     my $md5c = $md5 . '_count';
-                    my $ret = {};
-                    my ($val, $count);
-
-                    if ( $cfg->{group} ) {
-                        my $s =  $self->get_subfix($cfg->{group}, $cfg->{ttl});
-                        $md5  .= $s;
-                        $md5c .= $s;
+                    if (! $cfg->{force} ) {
+                        ## check memcached
+                        my $ret = {};
+    
+                        if ( $cfg->{group} ) {
+                            my $s =  $self->get_subfix($cfg->{group}, $cfg->{ttl});
+                            $md5  .= $s;
+                            $md5c .= $s;
+                        }
+    
+                        $ret = $self->memc()->get_multi($md5, $md5c) ;
+                        if ($ret) {
+                            $val    = $ret->{$md5};
+                            $count  = $ret->{$md5c};
+                        }
                     }
-
-                    $ret = $self->memc()->get_multi($md5, $md5c) ;
-                    if ($ret) {
-                        $val    = $ret->{$md5};
-                        $count  = $ret->{$md5c};
+                    else {
+                        $self->d("\t[forced to run SQL query & store result in memc]\n");
                     }
-
                     if (! defined $val ) { 
                         $self->d("\t[running SQL & storing memc]\n");
 
@@ -375,7 +394,7 @@ package SQL::Bibliosoph; {
                                 ->{$name}
                                 ->select_do([@_]);
 
-                    return 0 if $ret->rows() == -1;
+                    return 0 if ($ret->rows() || 0) == -1;
                                 
                     return wantarray 
                         ? ($ret->{mysql_insertid}, $ret->rows() ) 
@@ -689,5 +708,3 @@ At  http://nits.com.ar/bibliosoph you can find:
 This module is only tested with MySQL. Migration to other DB engines should be
 simple accomplished. If you would like to use Bibliosoph with other DB, please 
 let me know and we can help you if you do the testing.
-    
-

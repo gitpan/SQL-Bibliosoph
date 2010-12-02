@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               SQL-Bibliosoph
-version:            2.18
+version:            2.20
 abstract:           A SQL Query library
 author:
     - Matias Alejo Garcia ( matiu@cpan.org ) 
@@ -21,6 +21,7 @@ requires:
     Moose:                0.82
     Package::Constants:   ~
     perl:                 5.010000
+    Storable:             ~
     Test::More:           0.88
     Tie::Array::Random:   1
     Tie::Hash::Random:    1
