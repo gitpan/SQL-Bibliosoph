@@ -14,4 +14,3 @@ lib/SQL/Bibliosoph/Sims.pm
 lib/SQL/Bibliosoph/CatalogFile.pm
 lib/SQL/Bibliosoph/Query.pm
 lib/SQL/Bibliosoph/Dummy.pm
-META.yml                                 Module meta-data (added by MakeMaker)
