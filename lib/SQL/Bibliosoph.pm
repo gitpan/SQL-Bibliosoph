@@ -10,7 +10,7 @@ package SQL::Bibliosoph; {
     use SQL::Bibliosoph::Query;
     use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.46";
+    our $VERSION = "2.47";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
@@ -33,7 +33,8 @@ package SQL::Bibliosoph; {
 
     sub d {
         my $self = shift;
-        print STDERR join (' ', map { $_ // 'NULL'  } @_ )  if $self->debug(); 
+        my $name = shift;
+        print STDERR $name.join (':', map { $_ // 'NULL'  } @_ )  if $self->debug(); 
     }
 
     #------------------------------------------------------------------
@@ -221,7 +222,7 @@ package SQL::Bibliosoph; {
                 # Many
                 *$name = sub {
                     my ($that) = shift;
-                    $self->d('many ',$name,@_);
+                    $self->d('Q ',$name,@_);
                     return $self->queries()->{$name}->select_many([@_]);
                 };
 
@@ -230,7 +231,7 @@ package SQL::Bibliosoph; {
                 # Many
                 *$name_row = sub {
                     my ($that) = shift;
-                    $self->d('manyh ',$name,@_);
+                    $self->d('Q h_',$name,@_);
                     return $self->queries()->{$name}->select_many([@_],{});
                 };
 
@@ -239,7 +240,7 @@ package SQL::Bibliosoph; {
 
                 *$name_row = sub {
                     my ($that) = shift;
-                    $self->d('row  ',$name,@_);
+                    $self->d('Q row_',$name,@_);
                     return $self->queries()->{$name}->select_row([@_]);
                 };
 
@@ -248,7 +249,7 @@ package SQL::Bibliosoph; {
 
                 *$name_row = sub {
                     my ($that) = shift;
-                    $self->d('rowh  ',$name,@_);
+                    $self->d('Q rowh_',$name,@_);
                     return $self->queries()->{$name}->select_row_hash([@_]);
                 };
 
@@ -261,7 +262,7 @@ package SQL::Bibliosoph; {
                     my $ttl;
                     my $cfg  = shift @_;
 
-                    $self->d('manyCh',$name,@_);
+                    $self->d('Q ch_',$name,@_);
 
                     croak "we calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword" if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
 
@@ -308,6 +309,14 @@ package SQL::Bibliosoph; {
                     return $ret || [];
                 };
 
+				# Get statement handle instead of results.
+				$name_row = $name . '_sth';
+				*$name_row = sub {
+					my ($that) = shift;
+					$self->d('Q ', $name, @_);
+					return $self->queries()->{$name}->select_do([@_]);
+				};
+
                 last SW;
             };
 
@@ -320,7 +329,7 @@ package SQL::Bibliosoph; {
                 # Many
                 *$name = sub {
                     my ($that) = shift;
-                    $self->d('many ',$name,@_);
+                    $self->d('Q ',$name,@_);
 
 
                     return wantarray 
@@ -334,7 +343,7 @@ package SQL::Bibliosoph; {
                 *$nameh = sub {
                     my ($that) = shift;
 
-                    $self->d('manyh ',$name,@_);
+                    $self->d('Q h_',$name,@_);
 
                     return wantarray 
                         ? $self->queries()->{$name}->select_many2([@_],{})
@@ -351,7 +360,7 @@ package SQL::Bibliosoph; {
                     my $ttl;
                     my $cfg  = shift @_;
 
-                    $self->d('manyCh',$name,@_);
+                    $self->d('Q ch_',$name,@_);
 
                     croak "we calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword" if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
 
@@ -423,7 +432,7 @@ package SQL::Bibliosoph; {
                 # do
                 *$name = sub {
                     my ($that) = shift;
-                    $self->d('inse ',$name,@_);
+                    $self->d('Q ',$name,@_);
                     
                     my $ret = $self->queries()
                                 ->{$name}
@@ -450,7 +459,7 @@ package SQL::Bibliosoph; {
             #  scalar :  SQL_ROWS (modified rows)
             *$name = sub {
                 my ($that) = shift;
-                $self->d('oth  ',$name,@_);
+                $self->d('Q ',$name,@_);
 
                 return $self->queries()
                             ->{$name}
@@ -561,6 +570,11 @@ SQL::Bibliosoph - A SQL Statements Library
 
     my $products_array_of_hash_ref 
         = $bs->h_get_products($country,$price,$start,$limit);
+
+
+	# To get a prepared and executed statement handle, append '_sth':
+	my $sth = $bs->get_products_sth($country, $price, $start, $limit);
+
 
     # Selecting only one row (add row_ at the begining)
     # Query:
