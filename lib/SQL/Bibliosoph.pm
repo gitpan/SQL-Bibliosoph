@@ -1,7 +1,6 @@
 package SQL::Bibliosoph; {
     use Moose;
 
-    use Carp;
     use Data::Dumper;
     use Digest::MD5 qw/ md5_hex /;
     use Cache::Memcached::Fast;
@@ -10,7 +9,7 @@ package SQL::Bibliosoph; {
     use SQL::Bibliosoph::Query;
     use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.47";
+    our $VERSION = "2.50";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
@@ -264,7 +263,9 @@ package SQL::Bibliosoph; {
 
                     $self->d('Q ch_',$name,@_);
 
-                    croak "we calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword" if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
+                    SQL::Bibliosoph::Exception::CallError->throw(
+                        desc => "when calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword"
+                    ) if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
 
                     if (! $self->memc() ) {
                         $self->d("\n\tMemcached is NOT used, no server is defined");
@@ -362,7 +363,9 @@ package SQL::Bibliosoph; {
 
                     $self->d('Q ch_',$name,@_);
 
-                    croak "we calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword" if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
+                    SQL::Bibliosoph::Exception::CallError->throw(
+                        desc => "when calling a ch_* function, first argument must be a hash_ref and must have a 'ttl' keyword"
+                    ) if  ref ($cfg) ne 'HASH' || ! ( $ttl = $cfg->{ttl} );
 
                     if (! $self->memc() ) {
                         $self->d("\n\tMemcached is NOT used, no server is defined");
@@ -662,8 +665,8 @@ SQL::Bibliosoph supports bind parameters in statements definition and bind
 parements reordering (See SQL::Bibliosoph::CatalogFile for details).
 
 
-All functions throw 'carp' on error. The error message is 'SQL ERROR' and the
-mysql error reported by the driver.
+All functions throw 'SQL::Bibliosoph::Exception::QuerySyntaxError' on error. The 
+error message is 'SQL ERROR' and the mysql error reported by the driver.
 
 =head1 Constructor parameters
 
@@ -716,6 +719,14 @@ printed to STDERR after each query execution, if the time is bigger that
 
 To enable debug (prints each query, and arguments, very useful during
 development).
+
+=head3 throw_errors
+Enable by default. Will throw SQL::Bibliosoph::Exceptions on errors. If disabled,
+will print to STDERR. By default, duplicate key errors are not throwed are exception
+set this variable to '2' if you want that.
+
+
+=head3 duplicate_key 
 
 =head1 Bibliosoph
 
