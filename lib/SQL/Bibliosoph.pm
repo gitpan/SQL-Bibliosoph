@@ -5,12 +5,18 @@ package SQL::Bibliosoph; {
     use Digest::MD5 qw/ md5_hex /;
     use Cache::Memcached::Fast;
     use Storable;
-    use Log::Contextual qw(:log);
+    use Log::Contextual::WarnLogger;
+    use Log::Contextual qw(:log),
+    -default_logger => Log::Contextual::WarnLogger->new({
+        env_prefix => 'Bibliosoph'
+    });
+
+
 
     use SQL::Bibliosoph::Query;
     use SQL::Bibliosoph::CatalogFile;
 
-    our $VERSION = "2.53";
+    our $VERSION = "2.54";
 
 
     has 'dbh'       => ( is => 'ro', isa => 'DBI::db',  required=> 1);
@@ -203,6 +209,12 @@ package SQL::Bibliosoph; {
            elsif ($st =~ /\bSELECT\b.*\bCALL\b/is ) {
                $type = 'SELECT';
            }
+
+		   # Small exception4:
+		   # SELECTs in Postgres can define subqueries with WITH.
+		   elsif (lc($type) eq 'with') {
+			   $type = 'SELECT';
+		   }
 
             $self->create_method_for(uc($type||''),$name);
         }
@@ -773,6 +785,6 @@ At  http://nits.com.ar/bibliosoph you can find:
 
 =head1 BUGS
 
-This module is only tested with MySQL. Migration to other DB engines should be
-simple accomplished. If you would like to use Bibliosoph with other DB, please 
+This module have been tested with MySQL, PosgreSQL and SQL Server. Migration to other DB engines 
+should be simple accomplished. If you would like to use Bibliosoph with other DB, please 
 let me know and we can help you if you do the testing.
