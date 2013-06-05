@@ -34,4 +34,4 @@ requires:
   Tie::Hash::Random: 1
   Time::HiRes: 1.97
   perl: 5.010000
-version: 2.54
+version: 2.55
